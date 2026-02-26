@@ -1,47 +1,45 @@
 const express = require("express");
 const multer = require("multer");
-const axios = require("axios");
 const cors = require("cors");
-const fs = require("fs");
+const axios = require("axios");
 
 const app = express();
 app.use(cors());
 
-const upload = multer({ dest: "uploads/" });
+const upload = multer({ storage: multer.memoryStorage() });
 
-const YA_TOKEN = "y0__xD2tLQfGNuWAyC2z9LEFiWw8NqglZbBekKXqoY7hSKAkIP5";
+// 🔹 Проверка сервера
+app.get("/", (req, res) => {
+  res.send("Сервер М.Фото работает! Используй /upload для загрузки фото.");
+});
 
+// 🔹 Загрузка фото
 app.post("/upload", upload.single("photo"), async (req, res) => {
   try {
-    const filePath = req.file.path;
-    const fileName = Date.now() + "_" + req.file.originalname;
+    if (!req.file) throw new Error("Файл не получен");
 
-    // Получаем ссылку для загрузки
-    const uploadUrl = await axios.get(
-      "https://cloud-api.yandex.net/v1/disk/resources/upload",
-      {
-        params: {
-          path: `MPhoto/${fileName}`,
-          overwrite: true,
-        },
-        headers: {
-          Authorization: `OAuth ${YA_TOKEN}`,
-        },
-      }
+    const token = process.env.YA_TOKEN;
+    if (!token) throw new Error("Токен Яндекс.Диска не настроен!");
+
+    const fileName = `MPhoto_${Date.now()}.jpg`;
+
+    const uploadLinkRes = await axios.get(
+      `https://cloud-api.yandex.net/v1/disk/resources/upload?path=${fileName}`,
+      { headers: { Authorization: `OAuth ${token}` } }
     );
 
-    // Загружаем файл
-    await axios.put(uploadUrl.data.href, fs.readFileSync(filePath), {
-      headers: { "Content-Type": "application/octet-stream" },
+    const uploadUrl = uploadLinkRes.data.href;
+    await axios.put(uploadUrl, req.file.buffer, {
+      headers: { "Content-Type": "image/jpeg" }
     });
 
-    fs.unlinkSync(filePath);
-
-    res.json({ success: true });
+    res.json({ success: true, fileName });
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ error: "Ошибка загрузки" });
+    console.error(err);
+    res.json({ success: false, error: err.message });
   }
 });
 
-app.listen(5000, () => console.log("Server started on 5000"));
+// 🔹 Запуск сервера
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log("Server started on", PORT));
